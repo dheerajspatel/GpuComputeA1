@@ -1,9 +1,69 @@
 #include <wb.h>
+// System Includes
+#include <stdio.h>
 
 //@@ Complete this function
-void d_axpy(const float * h_x, float * h_y, float a, int len) {
+void d_axpy(const float * h_x, float * h_y, float a, int len)
+{
+  // Data definition - START
+  // 1. Size of Vectors
+  int vecLen = len * sizeof(float);
+  // 2. X Vector Data on device
+  float *gpu_vecX;
+  // 3. Y Vector Data on device
+  float *gpu_vecY;
+  // 4. CUDA Error Check
+  cudaError_t cudaApiErrVal;
+  // Data definition - END
 
+  // Allocate Memory in CUDA Global Memory - START
+  cudaApiErrVal = cudaMalloc(&gpu_vecX,vecLen);
 
+  if(cudaSuccess != cudaApiErrVal)
+  {
+    printf("cudaMalloc gpu_vecX returned error %s (code %d), line(%d)\n",
+    cudaGetErrorString(cudaApiErrVal), cudaApiErrVal, __LINE__);
+    exit(EXIT_FAILURE);
+  }
+
+  cudaApiErrVal = cudaMalloc(&gpu_vecY,vecLen);
+
+  if(cudaSuccess != cudaApiErrVal)
+  {
+    printf("cudaMalloc gpu_vecY returned error %s (code %d), line(%d)\n",
+    cudaGetErrorString(cudaApiErrVal), cudaApiErrVal, __LINE__);
+    exit(EXIT_FAILURE);
+  }
+
+  // Allocate Memory in CUDA Global Memory - END
+
+  // Copy Values from Host Memory to Device Global Memory - START
+  cudaApiErrVal = cudaMemCpy(gpu_vecX, h_x, vecLen, cudaMemCpyHostToDevice);
+
+  if(cudaSuccess != cudaApiErrVal)
+  {
+    printf("cudaMemCpy gpu_vecX returned error %s (code %d), line(%d)\n",
+    cudaGetErrorString(cudaApiErrVal), cudaApiErrVal, __LINE__);
+    exit(EXIT_FAILURE);
+  }
+
+  cudaApiErrVal = cudaMemCpy(gpu_vecY, h_y, vecLen, cudaMemCpyHostToDevice);
+
+  if(cudaSuccess != cudaApiErrVal)
+  {
+    printf("cudaMemCpy gpu_vecY returned error %s (code %d), line(%d)\n",
+    cudaGetErrorString(cudaApiErrVal), cudaApiErrVal, __LINE__);
+    exit(EXIT_FAILURE);
+  }
+
+  // Copy Values from Host Memory to Device Global Memory - END
+
+  // Launch the CUDA Kernel
+  
+
+  // Copy Data From CUDA Memory to Host Memory
+
+  // Free Device Memory
 
 }
 
@@ -22,6 +82,8 @@ int main(int argc, char **argv) {
   float *h_x;
   float *h_y;
   float a;
+
+  // Initialization of Data on the Host memory from the input Data
 
   args = wbArg_read(argc, argv);
 
