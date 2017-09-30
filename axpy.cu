@@ -1,4 +1,4 @@
-vecLenInBytes#include <wb.h>
+#include <wb.h>
 // System Includes
 #include <stdio.h>
 
@@ -12,7 +12,7 @@ void kernel_axpy (float * gpu_vecX, float * gpu_vecY, float gpu_scalar, int gpu_
   {
     gpu_vecY[Idx] += gpu_scalar * gpu_vecX[Idx];
   }
-
+  return;
 }
 
 // support function on the host
@@ -51,20 +51,20 @@ void sf_axpy(const float * h_x, float * h_y, float a, int len)
   // Allocate Memory in CUDA Global Memory - END
 
   // Copy Values from Host Memory to Device Global Memory - START
-  cudaApiErrVal = cudaMemCpy(gpu_vecX, h_x, vecLenInBytes, cudaMemcpyHostToDevice);
+  cudaApiErrVal = cudaMemcpy(gpu_vecX, h_x, vecLenInBytes, cudaMemcpyHostToDevice);
 
   if(cudaSuccess != cudaApiErrVal)
   {
-    printf("cudaMemCpy gpu_vecX returned error %s (code %d), line(%d)\n",
+    printf("cudaMemcpy gpu_vecX returned error %s (code %d), line(%d)\n",
     cudaGetErrorString(cudaApiErrVal), cudaApiErrVal, __LINE__);
     exit(EXIT_FAILURE);
   }
 
-  cudaApiErrVal = cudaMemCpy(gpu_vecY, h_y, vecLenInBytes, cudaMemcpyHostToDevice);
+  cudaApiErrVal = cudaMemcpy(gpu_vecY, h_y, vecLenInBytes, cudaMemcpyHostToDevice);
 
   if(cudaSuccess != cudaApiErrVal)
   {
-    printf("cudaMemCpy gpu_vecY returned error %s (code %d), line(%d)\n",
+    printf("cudaMemcpy gpu_vecY returned error %s (code %d), line(%d)\n",
     cudaGetErrorString(cudaApiErrVal), cudaApiErrVal, __LINE__);
     exit(EXIT_FAILURE);
   }
@@ -73,16 +73,16 @@ void sf_axpy(const float * h_x, float * h_y, float a, int len)
 
   // Launch the CUDA Kernel
   dim3 blockDim(256, 1, 1);
-  dim3 gridDim(ceil(len/blockDim.x), 1, 1);
+  dim3 gridDim((ceil(len/blockDim.x)), 1, 1);
 
-  kernel_axpy<<gridDim, blockDim>>(gpu_vecX, gpu_vecY, a, len);
+  kernel_axpy<<<gridDim, blockDim>>>(gpu_vecX, gpu_vecY, a, len);
 
   // START of Copy Data From CUDA Memory to Host Memory
-  cudaApiErrVal = cudaMemCpy(h_y, gpu_vecY, vecLenInBytes, cudaMemcpyDeviceToHost);
+  cudaApiErrVal = cudaMemcpy(h_y, gpu_vecY, vecLenInBytes, cudaMemcpyDeviceToHost);
 
   if(cudaSuccess != cudaApiErrVal)
   {
-    printf("cudaMemCpy h_y returned error %s (code %d), line(%d)\n",
+    printf("cudaMemcpy h_y returned error %s (code %d), line(%d)\n",
     cudaGetErrorString(cudaApiErrVal), cudaApiErrVal, __LINE__);
     exit(EXIT_FAILURE);
   }
