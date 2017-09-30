@@ -1,13 +1,26 @@
-#include <wb.h>
+vecLenInBytes#include <wb.h>
 // System Includes
 #include <stdio.h>
 
-//@@ Complete this function
-void d_axpy(const float * h_x, float * h_y, float a, int len)
+// the kernel code
+__global__
+void kernel_axpy (float * gpu_vecX, float * gpu_vecY, float gpu_scalar, int gpu_vecLen)
+{
+  int Idx = blockIdx.x*blockDim.x + threadIdx.x;
+
+  if(Idx < gpu_vecLen)
+  {
+    gpu_vecY[Idx] += gpu_scalar * gpu_vecX[Idx];
+  }
+
+}
+
+// support function on the host
+void sf_axpy(const float * h_x, float * h_y, float a, int len)
 {
   // Data definition - START
   // 1. Size of Vectors
-  int vecLen = len * sizeof(float);
+  int vecLenInBytes = len * sizeof(float);
   // 2. X Vector Data on device
   float *gpu_vecX;
   // 3. Y Vector Data on device
@@ -17,7 +30,7 @@ void d_axpy(const float * h_x, float * h_y, float a, int len)
   // Data definition - END
 
   // Allocate Memory in CUDA Global Memory - START
-  cudaApiErrVal = cudaMalloc(&gpu_vecX,vecLen);
+  cudaApiErrVal = cudaMalloc(&gpu_vecX,vecLenInBytes);
 
   if(cudaSuccess != cudaApiErrVal)
   {
@@ -26,7 +39,7 @@ void d_axpy(const float * h_x, float * h_y, float a, int len)
     exit(EXIT_FAILURE);
   }
 
-  cudaApiErrVal = cudaMalloc(&gpu_vecY,vecLen);
+  cudaApiErrVal = cudaMalloc(&gpu_vecY,vecLenInBytes);
 
   if(cudaSuccess != cudaApiErrVal)
   {
@@ -38,7 +51,7 @@ void d_axpy(const float * h_x, float * h_y, float a, int len)
   // Allocate Memory in CUDA Global Memory - END
 
   // Copy Values from Host Memory to Device Global Memory - START
-  cudaApiErrVal = cudaMemCpy(gpu_vecX, h_x, vecLen, cudaMemCpyHostToDevice);
+  cudaApiErrVal = cudaMemCpy(gpu_vecX, h_x, vecLenInBytes, cudaMemcpyHostToDevice);
 
   if(cudaSuccess != cudaApiErrVal)
   {
@@ -47,7 +60,7 @@ void d_axpy(const float * h_x, float * h_y, float a, int len)
     exit(EXIT_FAILURE);
   }
 
-  cudaApiErrVal = cudaMemCpy(gpu_vecY, h_y, vecLen, cudaMemCpyHostToDevice);
+  cudaApiErrVal = cudaMemCpy(gpu_vecY, h_y, vecLenInBytes, cudaMemcpyHostToDevice);
 
   if(cudaSuccess != cudaApiErrVal)
   {
@@ -56,15 +69,28 @@ void d_axpy(const float * h_x, float * h_y, float a, int len)
     exit(EXIT_FAILURE);
   }
 
-  // Copy Values from Host Memory to Device Global Memory - END
+  // END of Copy Values from Host Memory to Device Global Memory
 
   // Launch the CUDA Kernel
-  
+  dim3 blockDim(256, 1, 1);
+  dim3 gridDim(ceil(len/blockDim.x), 1, 1);
 
-  // Copy Data From CUDA Memory to Host Memory
+  kernel_axpy<<gridDim, blockDim>>(gpu_vecX, gpu_vecY, a, len);
+
+  // START of Copy Data From CUDA Memory to Host Memory
+  cudaApiErrVal = cudaMemCpy(h_y, gpu_vecY, vecLenInBytes, cudaMemcpyDeviceToHost);
+
+  if(cudaSuccess != cudaApiErrVal)
+  {
+    printf("cudaMemCpy h_y returned error %s (code %d), line(%d)\n",
+    cudaGetErrorString(cudaApiErrVal), cudaApiErrVal, __LINE__);
+    exit(EXIT_FAILURE);
+  }
+  // END of Copy Data From CUDA Memory to Host Memory
 
   // Free Device Memory
-
+  cudaFree(gpu_vecX);
+  cudaFree(gpu_vecY);
 }
 
 //Sequential Implementation
@@ -105,13 +131,11 @@ int main(int argc, char **argv) {
   wbLog(TRACE, "The input length is ", inputLength);
 
   wbTime_start(GPU, "Doing GPU Computation (memory + compute)");
-  d_axpy(h_x,h_y,a,inputLength);
+  sf_axpy(h_x,h_y,a,inputLength);
   wbTime_stop(GPU, "Doing GPU Computation (memory + compute)");
-
 
   // Verify correctness of the results
    wbSolution(args, h_y, inputLength);
-
 
   //Free the host memory
   free(h_x);
