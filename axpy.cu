@@ -1,6 +1,8 @@
 #include <wb.h>
 // System Includes
 #include <stdio.h>
+// For cuda runtime apis
+#include <cuda_runtime.h>
 
 // the kernel code
 __global__
@@ -12,7 +14,6 @@ void kernel_axpy (float * gpu_vecX, float * gpu_vecY, float gpu_scalar, int gpu_
   {
     gpu_vecY[Idx] += gpu_scalar * gpu_vecX[Idx];
   }
-  return;
 }
 
 // support function on the host
@@ -27,6 +28,7 @@ void sf_axpy(const float * h_x, float * h_y, float a, int len)
   float *gpu_vecY;
   // 4. CUDA Error Check
   cudaError_t cudaApiErrVal;
+  cudaError_t cudaKernelErrVal;
   // Data definition - END
 
   // Allocate Memory in CUDA Global Memory - START
@@ -72,10 +74,19 @@ void sf_axpy(const float * h_x, float * h_y, float a, int len)
   // END of Copy Values from Host Memory to Device Global Memory
 
   // Launch the CUDA Kernel
-  dim3 blockDim(256, 1, 1);
-  dim3 gridDim((ceil(len/blockDim.x)), 1, 1);
+  int blockDim = 256;
+  int gridDim = (len + blockDim - 1)/blockDim;
 
   kernel_axpy<<<gridDim, blockDim>>>(gpu_vecX, gpu_vecY, a, len);
+
+  cudaKernelErrVal = cudaGetLastError();
+
+  if(cudaSuccess != cudaKernelErrVal)
+  {
+    printf("Failed to launch the cuda kernel %s (code %d), line(%d)\n",
+    cudaGetErrorString(cudaKernelErrVal), cudaKernelErrVal, __LINE__);
+    exit(EXIT_FAILURE);
+  }
 
   // START of Copy Data From CUDA Memory to Host Memory
   cudaApiErrVal = cudaMemcpy(h_y, gpu_vecY, vecLenInBytes, cudaMemcpyDeviceToHost);
@@ -99,7 +110,6 @@ void h_axpy(const float * x, float * y, float a, int len) {
     for (int i = 0; i < len; i++) {
         y[i] += a * x[i];
     }
-
 }
 
 int main(int argc, char **argv) {
