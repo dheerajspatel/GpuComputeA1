@@ -34,7 +34,7 @@ void matrixMultiplyTiled(const float * A, const float * B, float * C,
 	int tIdy = threadIdx.y;
 
 	// Variable for storing the value in matric C computed by each thread
-	float tempC = 0;
+	float tempC = 0.0;
 
 	// Phase iteration counter
 	int phCnt = 0;
@@ -57,7 +57,7 @@ void matrixMultiplyTiled(const float * A, const float * B, float * C,
     }
     else
     {
-      sm_TileA[tIdy][tIdx] = 0;
+      sm_TileA[tIdy][tIdx] = 0.0;
     }
 
     if(((phCnt*TILE_WIDTH + tIdy) < numAColumns) && (ColIdx < numBColumns))
@@ -66,18 +66,15 @@ void matrixMultiplyTiled(const float * A, const float * B, float * C,
     }
     else
     {
-      sm_TileB[tIdy][tIdx] = 0;
+      sm_TileB[tIdy][tIdx] = 0.0;
     }
     // Barrier synchronization
     __syncthreads();
 
     // Compute element in C
-    if((RowIdx < numARows) && (ColIdx < numBColumns))
+    for(ciCnt = 0; ciCnt < TILE_WIDTH; ++ciCnt)
     {
-      for(ciCnt = 0; ciCnt < TILE_WIDTH; ++ciCnt)
-      {
-        tempC += sm_TileA[tIdy][ciCnt] * sm_TileB[ciCnt][tIdx];
-      }
+      tempC += sm_TileA[tIdy][ciCnt] * sm_TileB[ciCnt][tIdx];
     }
     // Barrier synchronization
     __syncthreads();
@@ -107,10 +104,10 @@ void matrixMultiplyMultiTile(const float * A, const float * B, float * C,
 	int tIdy = threadIdx.y;
 
 	// Variable for storing the value in matric C computed by each thread
-	float tempC = 0;
-  float tempC1 = 0;
-  float tempC2 = 0;
-  float tempC3 = 0;
+	float tempC = 0.0;
+  float tempC1 = 0.0;
+  float tempC2 = 0.0;
+  float tempC3 = 0.0;
 
 	// Phase iteration counter
 	int phCnt = 0;
@@ -133,7 +130,7 @@ void matrixMultiplyMultiTile(const float * A, const float * B, float * C,
     }
     else
     {
-      sm_TileA[tIdy][tIdx] = 0;
+      sm_TileA[tIdy][tIdx] = 0.0;
     }
 
     if(((phCnt*TILE_WIDTH + tIdy) < numAColumns) && (ColIdx < numBColumns))
@@ -142,7 +139,7 @@ void matrixMultiplyMultiTile(const float * A, const float * B, float * C,
     }
     else
     {
-      sm_TileB[tIdy][tIdx] = 0;
+      sm_TileB[tIdy][tIdx] = 0.0;
     }
 
     if(((phCnt*TILE_WIDTH + tIdy) < numAColumns) && ((ColIdx+1) < numBColumns))
@@ -151,7 +148,7 @@ void matrixMultiplyMultiTile(const float * A, const float * B, float * C,
     }
     else
     {
-      sm_TileB[tIdy][tIdx+1] = 0;
+      sm_TileB[tIdy][tIdx+1] = 0.0;
     }
 
     if(((phCnt*TILE_WIDTH + tIdy) < numAColumns) && ((ColIdx+2) < numBColumns))
@@ -160,7 +157,7 @@ void matrixMultiplyMultiTile(const float * A, const float * B, float * C,
     }
     else
     {
-      sm_TileB[tIdy][tIdx+2] = 0;
+      sm_TileB[tIdy][tIdx+2] = 0.0;
     }
 
     if(((phCnt*TILE_WIDTH + tIdy) < numAColumns) && ((ColIdx+3) < numBColumns))
@@ -169,21 +166,18 @@ void matrixMultiplyMultiTile(const float * A, const float * B, float * C,
     }
     else
     {
-      sm_TileB[tIdy][tIdx+3] = 0;
+      sm_TileB[tIdy][tIdx+3] = 0.0;
     }
     // Barrier synchronization
     __syncthreads();
 
     // Compute element in C
-    if((RowIdx < numARows) && (ColIdx < numBColumns))
+    for(ciCnt = 0; ciCnt < TILE_WIDTH; ++ciCnt)
     {
-      for(ciCnt = 0; ciCnt < TILE_WIDTH; ++ciCnt)
-      {
-        tempC += sm_TileA[tIdy][ciCnt] * sm_TileB[ciCnt][tIdx];
-        tempC1 += sm_TileA[tIdy][ciCnt] * sm_TileB[ciCnt][tIdx+1];
-        tempC2 += sm_TileA[tIdy][ciCnt] * sm_TileB[ciCnt][tIdx+2];
-        tempC3 += sm_TileA[tIdy][ciCnt] * sm_TileB[ciCnt][tIdx+3];
-      }
+      tempC += sm_TileA[tIdy][ciCnt] * sm_TileB[ciCnt][tIdx];
+      tempC1 += sm_TileA[tIdy][ciCnt] * sm_TileB[ciCnt][tIdx+1];
+      tempC2 += sm_TileA[tIdy][ciCnt] * sm_TileB[ciCnt][tIdx+2];
+      tempC3 += sm_TileA[tIdy][ciCnt] * sm_TileB[ciCnt][tIdx+3];
     }
     // Barrier synchronization
     __syncthreads();
