@@ -6,7 +6,7 @@ nCorrect = 0
 for i in range(10):
 	datasetDir = "Dataset/" + str(i) + "/"
 	result = subprocess.check_output(["./build/TiledMatrixMultiplication","-i",datasetDir+"input0.raw," + datasetDir+"input1.raw","-e",datasetDir+"output.raw","-t","matrix"])
-	correct = re.search('"correctq": true',result) != None
+	correct = re.findall('"correctq": true',result)
 	aDimMatch = re.search('"The dimensions of A are (\\d+) x (\\d+)"',result)
 	bDimMatch = re.search('"The dimensions of B are (\\d+) x (\\d+)"',result)
 
@@ -20,7 +20,7 @@ for i in range(10):
 	multitiledTime = int(multitiledMatch.group(1)) / 1e9
 	print "multi-tiling: " + str(totalFLOPS) + " total FLOPs / " + str(multitiledTime) + " s = " + str(totalFLOPS / multitiledTime / 1e9) + " GFLOPS / s"
 
-	if correct:
+	if len(correct)==2:
 		nCorrect += 1
 	else:
 		print str(i) + " incorrect"
