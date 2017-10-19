@@ -36,18 +36,13 @@ void matrixMultiplyTiled(const float * A, const float * B, float * C,
 	// Variable for storing the value in matric C computed by each thread
 	float tempC = 0.0;
 
-	// Phase iteration counter
-	int phCnt = 0;
-  // Compute iteration counter
-  int ciCnt = 0;
-
 	// Compute 1-D Row and Column Indices for accessing A and B from Global
 	// memory
 	int RowIdx = tIdy + bIdy * blockDim.y;
 	int ColIdx = tIdx + bIdx * blockDim.x;
 
 	// Loop over all the tiles of A and B to compute the element in C
-  for(phCnt = 0; phCnt < (ceil(numAColumns/(float)TILE_WIDTH)); ++phCnt)
+  for(int phCnt = 0; phCnt < ((numAColumns/TILE_WIDTH)+1); ++phCnt)
   {
     // Each thread loading one element from A and B into shared memory
     // Boundary check to handle rectangular matrices
@@ -72,10 +67,10 @@ void matrixMultiplyTiled(const float * A, const float * B, float * C,
     __syncthreads();
 
     // Compute element in C
-    for(ciCnt = 0; ciCnt < TILE_WIDTH; ++ciCnt)
-    {
-      tempC += sm_TileA[tIdy][ciCnt] * sm_TileB[ciCnt][tIdx];
-    }
+     for(int ciCnt = 0; ciCnt < TILE_WIDTH; ++ciCnt)
+     {
+       tempC += sm_TileA[tIdy][ciCnt] * sm_TileB[ciCnt][tIdx];
+     }
     // Barrier synchronization
     __syncthreads();
   }
@@ -93,7 +88,7 @@ void matrixMultiplyMultiTile(const float * A, const float * B, float * C,
 {
   // Declaration of shared memory matrices for storing a tile from A and B
 	__shared__ float sm_TileA[TILE_WIDTH][TILE_WIDTH];
-	__shared__ float sm_TileB[TILE_WIDTH*4U][TILE_WIDTH*4U];
+	__shared__ float sm_TileB[TILE_WIDTH][TILE_WIDTH*4];
 
 	// Block Indices
 	int bIdx = blockIdx.x;
@@ -109,20 +104,15 @@ void matrixMultiplyMultiTile(const float * A, const float * B, float * C,
   float tempC2 = 0.0;
   float tempC3 = 0.0;
 
-	// Phase iteration counter
-	int phCnt = 0;
-  // Compute iteration counter
-  int ciCnt = 0;
-
 	// Compute 1-D Row and Column Indices for accessing A and B from Global
 	// memory
 	int RowIdx = tIdy + bIdy * blockDim.y;
 	int ColIdx = tIdx + bIdx * blockDim.x;
 
 	// Loop over all the tiles of A and B to compute the element in C
-  for(phCnt = 0; phCnt < (ceil(numAColumns/(float)TILE_WIDTH)); ++phCnt)
+  for(int phCnt = 0; phCnt < ((numAColumns/TILE_WIDTH)+1); ++phCnt)
   {
-    // Each thread loading one element from A and B into shared memory
+    // Each thread loading one element from A and 4 elements from B into shared memory
     // Boundary check to handle rectangular matrices
     if((RowIdx < numARows) && ((phCnt*TILE_WIDTH + tIdx) < numAColumns))
     {
@@ -172,7 +162,7 @@ void matrixMultiplyMultiTile(const float * A, const float * B, float * C,
     __syncthreads();
 
     // Compute element in C
-    for(ciCnt = 0; ciCnt < TILE_WIDTH; ++ciCnt)
+    for(int ciCnt = 0; ciCnt < TILE_WIDTH; ++ciCnt)
     {
       tempC += sm_TileA[tIdy][ciCnt] * sm_TileB[ciCnt][tIdx];
       tempC1 += sm_TileA[tIdy][ciCnt] * sm_TileB[ciCnt][tIdx+1];
@@ -331,12 +321,11 @@ int main(int argc, char **argv)
     exit(EXIT_FAILURE);
   }
   // Copy memory to the GPU - END
-  cudaDeviceSynchronize();
   wbTime_stop(GPU, "Copying input memory to the GPU.");
 
   // Initialize the grid and block dimensions
   dim3 dimBlock(BLOCK_WIDTH, BLOCK_WIDTH);
-  dim3 dimGrid((ceil(numCColumns/ dimBlock.x)), (ceil(numCRows/ dimBlock.y)));
+  dim3 dimGrid(((numCColumns/dimBlock.x)+1), ((numCRows/dimBlock.y)+1));
 
   wbTime_start(Compute, "Performing basic tiled computation");
 
@@ -369,12 +358,10 @@ int main(int argc, char **argv)
 	  exit(EXIT_FAILURE);
   }
 
-  cudaDeviceSynchronize();
   wbTime_stop(Copy, "Copying output memory to the CPU");
 
-  // chack the basic tiled solution
+  // check the basic tiled solution
   wbSolution(args, hostC, numCRows, numCColumns);
-
 
   wbTime_start(Compute, "Performing multi-tiled computation");
 
@@ -407,7 +394,6 @@ int main(int argc, char **argv)
 	  exit(EXIT_FAILURE);
   }
 
-  cudaDeviceSynchronize();
   wbTime_stop(Copy, "Copying output memory to the CPU 2");
 
   // Check the multi-tiled solution
