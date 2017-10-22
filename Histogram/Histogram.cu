@@ -5,7 +5,8 @@
 #include <cuda_runtime.h>
 
 // Number of Bins - Fixed for this assignment
-#define D_NUM_BINS 4096
+#define D_NUM_BINS 	4096
+#define D_BLOCK_WIDTH	256
 
 #define CUDA_CHECK(ans)                                                   \
   { gpuAssert((ans), __FILE__, __LINE__); }
@@ -21,7 +22,7 @@ inline void gpuAssert(cudaError_t code, const char *file, int line,
 
 // Histogram Kernel
 __global__
-void computeHistogram(const unsigned int * dInput, unsigned int dBins,
+void computeHistogram(const unsigned int * dInput, unsigned int * dBins,
   int dInLen)
 {
   /* code */
@@ -43,11 +44,11 @@ int main(int argc, char *argv[]) {
   wbTime_start(Generic, "Importing data and creating memory on host");
   hostInput = (unsigned int *)wbImport(wbArg_getInputFile(args, 0),
                                        &inputLength, "Integer");
-  hostBins = (unsigned int *)malloc(NUM_BINS * sizeof(unsigned int));
+  hostBins = (unsigned int *)malloc(D_NUM_BINS * sizeof(unsigned int));
   wbTime_stop(Generic, "Importing data and creating memory on host");
 
   wbLog(TRACE, "The input length is ", inputLength);
-  wbLog(TRACE, "The number of bins is ", NUM_BINS);
+  wbLog(TRACE, "The number of bins is ", D_NUM_BINS);
 
   //Calculate input lentgh in bytes for allocating memory on device
   dInLenInBytes = inputLength * sizeof(int);
@@ -92,7 +93,7 @@ int main(int argc, char *argv[]) {
   wbTime_stop(GPU, "Copying input memory to the GPU.");
 
   // Initialize the grid and block dimensions
-  dim3 dimBlock(BLOCK_WIDTH);
+  dim3 dimBlock(D_BLOCK_WIDTH);
   dim3 dimGrid((inputLength/dimBlock.x)+1);
 
   // Launch kernel
