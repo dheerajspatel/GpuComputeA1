@@ -3,6 +3,8 @@
 #include <stdio.h>
 // For cuda runtime apis
 #include <cuda_runtime.h>
+// Math apis
+#include <math.h>
 
 // Number of Bins - Fixed for this assignment
 #define D_NUM_BINS 	4096
@@ -20,12 +22,57 @@ inline void gpuAssert(cudaError_t code, const char *file, int line,
   }
 }
 
-// Histogram Kernel
+// Histogram Kernel with Privatization Method
 __global__
-void computeHistogram(const unsigned int * dInput, unsigned int * dBins,
-  int dInLen)
+void computeHistogram_privatized_nosat(const unsigned int * dInput,
+  unsigned int * dBins, int dInLen)
 {
-  /* code */
+  /* Private copy of the Bins */
+  unsigned int sm_Bins[D_NUM_BINS];
+  /* Bin index */
+  int binIdx;
+  /* Thread index */
+  int tIdx = threadIdx.x;
+  /* Input index */
+  int inIdx = threadIdx.x + blockIdx.x * blockDim.x;
+  /* Stride */
+  int stride = blockDim.x * gridDim.x;
+  /* Initialize the Private Bins Copy */
+  for(int i=tIdx; i < D_NUM_BINS; i+=stride)
+  {
+    sm_Bins[i] = 0;
+  }
+  /* synchronization */
+  __syncthreads();
+
+  /* Compute Histogram */
+  for(;inIdx<dInLen; inIdx+=stride)
+  {
+    binIdx = dInput[inIdx];
+    if(binIdx < D_NUM_BINS)
+    {
+      atomicAdd(&(sm_Bins[binIdx]), 1);
+    }
+  }
+  /* synchronization */
+  __syncthreads();
+
+  /* Update to Global copy */
+  for(int j=tIdx; j < D_NUM_BINS; j+=stride)
+  {
+    atomicAdd(&(dBins[j]), sm_Bins[j]);
+  }
+}
+
+// Kernel to Saturate the Bin Values
+__global__
+void saturateHistoBins(unsigned int * dBins, int dBinLen)
+{
+  int stride = blockDim.x * gridDim.x;
+  for(int i=threadIdx.x; i < dBinLen; i+=stride)
+  {
+    dBins[i] = min(dBins[i], 127);
+  }
 }
 
 int main(int argc, char *argv[]) {
@@ -94,15 +141,15 @@ int main(int argc, char *argv[]) {
 
   // Initialize the grid and block dimensions
   dim3 dimBlock(D_BLOCK_WIDTH);
-  dim3 dimGrid((inputLength/dimBlock.x)+1);
+  dim3 dimGrid(ceil(inputLength/(float)dimBlock.x));
 
   // Launch kernel
   // ----------------------------------------------------------
   wbLog(TRACE, "Launching kernel");
   wbTime_start(Compute, "Performing CUDA computation");
   // Perform kernel computation here
-  computeHistogram<<<dimGrid, dimBlock>>>(deviceInput, deviceBins,
-    inputLength);
+  computeHistogram_privatized_nosat<<<dimGrid, dimBlock>>>(deviceInput,
+    deviceBins, inputLength);
 
   cudaKernelErrVal = cudaGetLastError();
   if(cudaSuccess != cudaKernelErrVal)
@@ -114,6 +161,26 @@ int main(int argc, char *argv[]) {
   CUDA_CHECK(cudaDeviceSynchronize());
 
   wbTime_stop(Compute, "Performing CUDA computation");
+
+  //Call Saturation kernel
+  // Initialize the grid and block dimensions
+  dim3 dimBlock(D_BLOCK_WIDTH);
+  dim3 dimGrid(ceil(D_NUM_BINS/(float)dimBlock.x));
+
+  wbTime_start(Compute, "Performing computation for Saturation");
+  // Perform kernel computation here
+  saturateHistoBins<<<dimGrid, dimBlock>>>(deviceBins, D_NUM_BINS);
+
+  cudaKernelErrVal = cudaGetLastError();
+  if(cudaSuccess != cudaKernelErrVal)
+  {
+    printf("Failed to launch the cuda kernel %s (code %d), line(%d)\n",
+    cudaGetErrorString(cudaKernelErrVal), cudaKernelErrVal, __LINE__);
+    exit(EXIT_FAILURE);
+  }
+  CUDA_CHECK(cudaDeviceSynchronize());
+
+  wbTime_stop(Compute, "Performing computation for Saturation");
 
   wbTime_start(Copy, "Copying output memory to the CPU");
   //Copy the GPU memory back to the CPU here
