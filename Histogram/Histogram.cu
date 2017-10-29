@@ -24,41 +24,44 @@ inline void gpuAssert(cudaError_t code, const char *file, int line,
 
 // Histogram Kernel with Privatization Method
 __global__
-void computeHistogram_privatized_nosat(const unsigned int * dInput,
+void computeHistogram_privatized_nosat(unsigned int * dInput,
   unsigned int * dBins, int dInLen)
 {
   /* Private copy of the Bins */
-  unsigned int sm_Bins[D_NUM_BINS];
+  __shared__ unsigned int sm_Bins[D_NUM_BINS];
   /* Bin index */
   int binIdx;
   /* Thread index */
   int tIdx = threadIdx.x;
   /* Input index */
   int inIdx = threadIdx.x + blockIdx.x * blockDim.x;
+  /* Output Bin index */
+  int outBinIdx = threadIdx.x + blockIdx.x * blockDim.x;
   /* Stride */
   int stride = blockDim.x * gridDim.x;
   /* Initialize the Private Bins Copy */
   for(int i=tIdx; i < D_NUM_BINS; i+=stride)
   {
-    sm_Bins[i] = 0;
+    sm_Bins[i] = 0U;
   }
   /* synchronization */
   __syncthreads();
 
   /* Compute Histogram */
-  for(;inIdx<dInLen; inIdx+=stride)
+  while(inIdx<dInLen)
   {
     binIdx = dInput[inIdx];
     if(binIdx < D_NUM_BINS)
     {
-      atomicAdd(&(sm_Bins[binIdx]), 1);
+      atomicAdd(&(sm_Bins[binIdx]), 1U);
     }
+    inIdx+=stride;
   }
   /* synchronization */
   __syncthreads();
 
   /* Update to Global copy */
-  for(int j=tIdx; j < D_NUM_BINS; j+=stride)
+  for(int j=outBinIdx; j < D_NUM_BINS; j+=stride)
   {
     atomicAdd(&(dBins[j]), sm_Bins[j]);
   }
@@ -69,9 +72,11 @@ __global__
 void saturateHistoBins(unsigned int * dBins, int dBinLen)
 {
   int stride = blockDim.x * gridDim.x;
-  for(int i=threadIdx.x; i < dBinLen; i+=stride)
+  int Idx = threadIdx.x + blockIdx.x * blockDim.x;
+
+  for(int i=Idx; i < dBinLen; i+=stride)
   {
-    dBins[i] = min(dBins[i], 127);
+    dBins[i] = min(dBins[i], 127U);
   }
 }
 
@@ -98,11 +103,11 @@ int main(int argc, char *argv[]) {
   wbLog(TRACE, "The number of bins is ", D_NUM_BINS);
 
   //Calculate input lentgh in bytes for allocating memory on device
-  dInLenInBytes = inputLength * sizeof(int);
+  dInLenInBytes = inputLength * sizeof(unsigned int);
 
   wbTime_start(GPU, "Allocating GPU memory.");
   // Allocate GPU memory - START
-  cudaApiErrVal = cudaMalloc(&deviceInput,dInLenInBytes);
+  cudaApiErrVal = cudaMalloc((void **)&deviceInput,dInLenInBytes);
 
   if(cudaSuccess != cudaApiErrVal)
   {
@@ -111,7 +116,7 @@ int main(int argc, char *argv[]) {
     exit(EXIT_FAILURE);
   }
 
-  cudaApiErrVal = cudaMalloc(&deviceBins,D_NUM_BINS);
+  cudaApiErrVal = cudaMalloc((void **)&deviceBins,(D_NUM_BINS * sizeof(unsigned int)));
 
   if(cudaSuccess != cudaApiErrVal)
   {
@@ -141,7 +146,7 @@ int main(int argc, char *argv[]) {
 
   // Initialize the grid and block dimensions
   dim3 dimBlock(D_BLOCK_WIDTH);
-  dim3 dimGrid(ceil(inputLength/(float)dimBlock.x));
+  dim3 dimGrid((ceil(inputLength/256.0)));
 
   // Launch kernel
   // ----------------------------------------------------------
@@ -163,13 +168,13 @@ int main(int argc, char *argv[]) {
   wbTime_stop(Compute, "Performing CUDA computation");
 
   //Call Saturation kernel
-  // Initialize the grid and block dimensions
-  dim3 dimBlock(D_BLOCK_WIDTH);
-  dim3 dimGrid(ceil(D_NUM_BINS/(float)dimBlock.x));
+  // Initialize the grid dimensions
+  // Block dimension is same as before
+  dim3 dimGrid2((ceil(D_NUM_BINS/256.0)));
 
   wbTime_start(Compute, "Performing computation for Saturation");
   // Perform kernel computation here
-  saturateHistoBins<<<dimGrid, dimBlock>>>(deviceBins, D_NUM_BINS);
+  saturateHistoBins<<<dimGrid2, dimBlock>>>(deviceBins, D_NUM_BINS);
 
   cudaKernelErrVal = cudaGetLastError();
   if(cudaSuccess != cudaKernelErrVal)
