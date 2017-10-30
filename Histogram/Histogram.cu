@@ -30,19 +30,17 @@ void computeHistogram_privatized_nosat(unsigned int * dInput,
   /* Private copy of the Bins */
   __shared__ unsigned int sm_Bins[D_NUM_BINS];
   /* Bin index */
-  int binIdx;
+  unsigned int binIdx;
   /* Thread index */
   int tIdx = threadIdx.x;
   /* Input index */
   int inIdx = threadIdx.x + blockIdx.x * blockDim.x;
-  /* Output Bin index */
-  int outBinIdx = threadIdx.x + blockIdx.x * blockDim.x;
   /* Stride */
   int stride = blockDim.x * gridDim.x;
   /* Initialize the Private Bins Copy */
-  for(int i=tIdx; i < D_NUM_BINS; i+=stride)
+  for(int i=tIdx; i < D_NUM_BINS; i+=blockDim.x)
   {
-    sm_Bins[i] = 0U;
+    sm_Bins[i] = 0;
   }
   /* synchronization */
   __syncthreads();
@@ -53,7 +51,7 @@ void computeHistogram_privatized_nosat(unsigned int * dInput,
     binIdx = dInput[inIdx];
     if(binIdx < D_NUM_BINS)
     {
-      atomicAdd(&(sm_Bins[binIdx]), 1U);
+      atomicAdd(&(sm_Bins[binIdx]), 1);
     }
     inIdx+=stride;
   }
@@ -61,7 +59,7 @@ void computeHistogram_privatized_nosat(unsigned int * dInput,
   __syncthreads();
 
   /* Update to Global copy */
-  for(int j=outBinIdx; j < D_NUM_BINS; j+=stride)
+  for(int j=tIdx; j < D_NUM_BINS; j+=blockDim.x)
   {
     atomicAdd(&(dBins[j]), sm_Bins[j]);
   }
@@ -71,12 +69,11 @@ void computeHistogram_privatized_nosat(unsigned int * dInput,
 __global__
 void saturateHistoBins(unsigned int * dBins, int dBinLen)
 {
-  int stride = blockDim.x * gridDim.x;
   int Idx = threadIdx.x + blockIdx.x * blockDim.x;
 
-  for(int i=Idx; i < dBinLen; i+=stride)
+  if(Idx < dBinLen)
   {
-    dBins[i] = min(dBins[i], 127U);
+    dBins[Idx] = min(dBins[Idx], 127);
   }
 }
 
@@ -87,7 +84,8 @@ int main(int argc, char *argv[]) {
   unsigned int *hostBins;
   unsigned int *deviceInput;
   unsigned int *deviceBins;
-  int dInLenInBytes; // Input length in bytes
+  int inputLenInBytes; // Input length in bytes
+  int binsLenInBytes;  // Bins length in bytes
   cudaError_t cudaApiErrVal; // CUDA Error Check
   cudaError_t cudaKernelErrVal; // CUDA Error Check
 
@@ -102,12 +100,18 @@ int main(int argc, char *argv[]) {
   wbLog(TRACE, "The input length is ", inputLength);
   wbLog(TRACE, "The number of bins is ", D_NUM_BINS);
 
+  //Initialize HostBins array
+  for(int i=0; i<D_NUM_BINS; i++)
+  {
+    hostBins[i] = 0;
+  }
   //Calculate input lentgh in bytes for allocating memory on device
-  dInLenInBytes = inputLength * sizeof(unsigned int);
+  inputLenInBytes = inputLength * sizeof(unsigned int);
+  binsLenInBytes = D_NUM_BINS * sizeof(unsigned int);
 
   wbTime_start(GPU, "Allocating GPU memory.");
   // Allocate GPU memory - START
-  cudaApiErrVal = cudaMalloc((void **)&deviceInput,dInLenInBytes);
+  cudaApiErrVal = cudaMalloc((void **)&deviceInput,inputLenInBytes);
 
   if(cudaSuccess != cudaApiErrVal)
   {
@@ -116,7 +120,7 @@ int main(int argc, char *argv[]) {
     exit(EXIT_FAILURE);
   }
 
-  cudaApiErrVal = cudaMalloc((void **)&deviceBins,(D_NUM_BINS * sizeof(unsigned int)));
+  cudaApiErrVal = cudaMalloc((void **)&deviceBins,binsLenInBytes);
 
   if(cudaSuccess != cudaApiErrVal)
   {
@@ -131,12 +135,21 @@ int main(int argc, char *argv[]) {
   wbTime_start(GPU, "Copying input memory to the GPU.");
   // Copy memory to the GPU - START
 
-  cudaApiErrVal = cudaMemcpy(deviceInput, hostInput, dInLenInBytes,
+  cudaApiErrVal = cudaMemcpy(deviceInput, hostInput, inputLenInBytes,
                              cudaMemcpyHostToDevice);
 
   if(cudaSuccess != cudaApiErrVal)
   {
     printf("cudaMemcpy deviceInput returned error %s (code %d), line(%d)\n",
+    cudaGetErrorString(cudaApiErrVal), cudaApiErrVal, __LINE__);
+    exit(EXIT_FAILURE);
+  }
+
+  cudaApiErrVal = cudaMemcpy(deviceBins, hostBins, binsLenInBytes,
+                             cudaMemcpyHostToDevice);
+  if(cudaSuccess != cudaApiErrVal)
+  {
+    printf("cudaMemcpy deviceBins returned error %s (code %d), line(%d)\n",
     cudaGetErrorString(cudaApiErrVal), cudaApiErrVal, __LINE__);
     exit(EXIT_FAILURE);
   }
@@ -146,7 +159,7 @@ int main(int argc, char *argv[]) {
 
   // Initialize the grid and block dimensions
   dim3 dimBlock(D_BLOCK_WIDTH);
-  dim3 dimGrid((ceil(inputLength/256.0)));
+  dim3 dimGrid((ceil(D_NUM_BINS/float(dimBlock.x))));
 
   // Launch kernel
   // ----------------------------------------------------------
@@ -167,14 +180,12 @@ int main(int argc, char *argv[]) {
 
   wbTime_stop(Compute, "Performing CUDA computation");
 
-  //Call Saturation kernel
-  // Initialize the grid dimensions
-  // Block dimension is same as before
-  dim3 dimGrid2((ceil(D_NUM_BINS/256.0)));
+  //  Call Saturation kernel
+  // Block and Grid dimension is same as before
 
   wbTime_start(Compute, "Performing computation for Saturation");
   // Perform kernel computation here
-  saturateHistoBins<<<dimGrid2, dimBlock>>>(deviceBins, D_NUM_BINS);
+  saturateHistoBins<<<dimGrid, dimBlock>>>(deviceBins, D_NUM_BINS);
 
   cudaKernelErrVal = cudaGetLastError();
   if(cudaSuccess != cudaKernelErrVal)
@@ -189,7 +200,7 @@ int main(int argc, char *argv[]) {
 
   wbTime_start(Copy, "Copying output memory to the CPU");
   //Copy the GPU memory back to the CPU here
-  cudaApiErrVal = cudaMemcpy(hostBins, deviceBins, D_NUM_BINS,
+  cudaApiErrVal = cudaMemcpy(hostBins, deviceBins, binsLenInBytes,
                              cudaMemcpyDeviceToHost);
 
   if (cudaSuccess != cudaApiErrVal)
