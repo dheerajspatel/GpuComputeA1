@@ -22,7 +22,7 @@
 
 //Convolution kernel
 __global__
-convolution(float * dIn, const float __restrict__ * dM, float * dOut,
+void convolution(float * dIn, const float * __restrict__ dM, float * dOut,
             int imageChannels, int imageWidth, int imageHeight)
 {
   //Input and Output tiles
@@ -83,7 +83,7 @@ int main(int argc, char *argv[]) {
   cudaApiErrVal = cudaMalloc(&deviceMaskData,maskDataLenInBytes);
   if(cudaSuccess != cudaApiErrVal)
   {
-    printf("cudaMalloc deviceMaskData returned error %s (code %d),
+    printf("cudaMalloc deviceMaskData returned error %s (code %d),\
     line(%d)\n", cudaGetErrorString(cudaApiErrVal), cudaApiErrVal, __LINE__);
     exit(EXIT_FAILURE);
   }
@@ -91,7 +91,7 @@ int main(int argc, char *argv[]) {
   cudaApiErrVal = cudaMalloc(&deviceInputImageData,imageDataLenInBytes);
   if(cudaSuccess != cudaApiErrVal)
   {
-    printf("cudaMalloc deviceInputImageData returned error %s (code %d),
+    printf("cudaMalloc deviceInputImageData returned error %s (code %d),\
     line(%d)\n", cudaGetErrorString(cudaApiErrVal), cudaApiErrVal, __LINE__);
     exit(EXIT_FAILURE);
   }
@@ -99,7 +99,7 @@ int main(int argc, char *argv[]) {
   cudaApiErrVal = cudaMalloc(&deviceOutputImageData,imageDataLenInBytes);
   if(cudaSuccess != cudaApiErrVal)
   {
-    printf("cudaMalloc deviceOutputImageData returned error %s (code %d),
+    printf("cudaMalloc deviceOutputImageData returned error %s (code %d),\
     line(%d)\n", cudaGetErrorString(cudaApiErrVal), cudaApiErrVal, __LINE__);
     exit(EXIT_FAILURE);
   }
@@ -120,7 +120,7 @@ int main(int argc, char *argv[]) {
                              imageDataLenInBytes, cudaMemcpyHostToDevice);
   if(cudaSuccess != cudaApiErrVal)
   {
-    printf("cudaMemcpy deviceInputImageData returned error %s (code %d),
+    printf("cudaMemcpy deviceInputImageData returned error %s (code %d),\
     line(%d)\n", cudaGetErrorString(cudaApiErrVal), cudaApiErrVal, __LINE__);
     exit(EXIT_FAILURE);
   }
