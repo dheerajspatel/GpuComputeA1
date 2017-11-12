@@ -15,19 +15,74 @@
 
 #define Mask_width 5
 #define Mask_radius Mask_width / 2
-#define TILE_WIDTH 16 //Output Tile Width
-#define INPUT_TILE_WIDTH  (TILE_WIDTH + Mask_width - 1)
-#define w (TILE_WIDTH + Mask_width - 1)
+#define OUT_TILE_WIDTH 12 //Output Tile Width, set such that input tile width = 16
+#define INPUT_TILE_WIDTH  (OUT_TILE_WIDTH + Mask_width - 1)
+#define w (OUT_TILE_WIDTH + Mask_width - 1)
 #define clamp(x) (min(max((x), 0.0), 1.0))
+#define CHANNELS 3 //Number of channels (fixed)
 
 //Convolution kernel
 __global__
 void convolution(float * dIn, const float * __restrict__ dM, float * dOut,
             int imageChannels, int imageWidth, int imageHeight)
 {
-  //Input and Output tiles
-  __shared__ float dOutTile[TILE_WIDTH][TILE_WIDTH];
-  __shared__ float dInTile[INPUT_TILE_WIDTH][INPUT_TILE_WIDTH];
+  //Input tile
+  __shared__ float dInTile[INPUT_TILE_WIDTH][INPUT_TILE_WIDTH * CHANNELS];
+
+  //1D Row and Column Indices for output tile
+  int outRowIdx = threadIdx.y + blockIdx.y*OUT_TILE_WIDTH;
+  int outColIdx = threadIdx.x + blockIdx.x*OUT_TILE_WIDTH;
+
+  //1D Row and Column Indices for input tile
+  int inRowIdx = outRowIdx - Mask_radius;
+  int inColIdx = outColIdx - Mask_radius;
+
+  //Copy data to shared memory tites
+  //Every thread copies one element from dIn
+  if((inRowIdx >= 0) && (inRowIdx < imageHeight) && (inColIdx >= 0) &&\
+     (inColIdx < imageWidth))
+  {
+    //Copy each channel data
+    for(int i=0; i<imageChannels; i++)
+    {
+      dInTile[threadIdx.y][(threadIdx.x*CHANNELS)+i] = \
+                            dIn[(inRowIdx*imageWidth + inColIdx)*CHANNELS + i];
+    }
+  }
+  else
+  {
+    dInTile[threadIdx.y][(threadIdx.x*CHANNELS)] = 0.0; //Red
+    dInTile[threadIdx.y][(threadIdx.x*CHANNELS)+1] = 0.0;//Green
+    dInTile[threadIdx.y][(threadIdx.x*CHANNELS)+2] = 0.0;//Blue
+  }
+  //synchronization
+  __syncthreads();
+
+  //compute convolution
+  float rPixVal; //channel0 of each pixel
+  float gPixVal; //channel1 of each pixel
+  float bPixVal; //channel2 of each pixel
+  //some threads are not required for output value computation
+  if((threadIdx.x<OUT_TILE_WIDTH) && (threadIdx.y<OUT_TILE_WIDTH))
+  {
+    for(int j=0; j < Mask_width; j++)//iterate over each row
+    {
+      for(int k=0; k<Mask_width; k++)//iterate over each Column
+      {
+        rPixVal += dM[j][k] * dInTile[j+threadIdx.y][(k*CHANNELS)+(threadIdx.x*CHANNELS)];
+        gPixVal += dM[j][k] * dInTile[j+threadIdx.y][(k*CHANNELS)+(threadIdx.x*CHANNELS + 1)];
+        bPixVal += dM[j][k] * dInTile[j+threadIdx.y][(k*CHANNELS)+(threadIdx.x*CHANNELS + 2)];
+      }
+    }
+    //write values to global output
+    if((outRowIdx < imageHeight) && (outColIdx < imageWidth))
+    {
+      dIn[(outRowIdx*imageWidth + outColIdx)*CHANNELS] = clamp(rPixVal);
+      dIn[(outRowIdx*imageWidth + outColIdx)*CHANNELS + 1] = clamp(gPixVal);
+      dIn[(outRowIdx*imageWidth + outColIdx)*CHANNELS + 2] = clamp(bPixVal);
+    }
+  }
+
 }
 
 int main(int argc, char *argv[]) {
@@ -128,7 +183,7 @@ int main(int argc, char *argv[]) {
 
   wbTime_start(Compute, "Doing the computation on the GPU");
   //Thread block size same as Output Tile width
-  dim3 dimBlock(TILE_WIDTH, TILE_WIDTH);
+  dim3 dimBlock(INPUT_TILE_WIDTH, INPUT_TILE_WIDTH);
   dim3 dimGrid(ceil(imageWidth/(float)dimBlock.x),
                ceil(imageHeight/(float)dimBlock.y));
   convolution<<<dimGrid, dimBlock>>>(deviceInputImageData, deviceMaskData,
@@ -149,14 +204,21 @@ int main(int argc, char *argv[]) {
   cudaMemcpy(hostOutputImageData, deviceOutputImageData, imageDataLenInBytes,
              cudaMemcpyDeviceToHost);
   wbTime_stop(Copy, "Copying data from the GPU");
-
+  cudaDeviceSynchronize();
   wbTime_stop(GPU, "Doing GPU Computation (memory + compute)");
 
+  //Update outputImage data
+  wbImage_setData(outputImage, hostOutputImageData);
   wbSolution(arg, outputImage);
 
-  //@@ Insert code here
+  //Free the GPU memory here
+  cudaFree(deviceMaskData);
+  cudaFree(deviceInputImageData);
+  cudaFree(deviceOutputImageData);
 
   free(hostMaskData);
+  free(hostInputImageData);
+  free(hostOutputImageData);
   wbImage_delete(outputImage);
   wbImage_delete(inputImage);
 
