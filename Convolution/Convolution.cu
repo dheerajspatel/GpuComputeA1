@@ -38,7 +38,7 @@ void convolution(float * dIn, const float * __restrict__ dM, float * dOut,
   int inColIdx = outColIdx - Mask_radius;
 
   //Copy data to shared memory tites
-  //Every thread copies one element from dIn
+  //Every thread copies one pixel from dIn
   if((inRowIdx >= 0) && (inRowIdx < imageHeight) && (inColIdx >= 0) &&\
      (inColIdx < imageWidth))
   {
@@ -59,9 +59,9 @@ void convolution(float * dIn, const float * __restrict__ dM, float * dOut,
   __syncthreads();
 
   //compute convolution
-  float rPixVal; //channel0 of each pixel
-  float gPixVal; //channel1 of each pixel
-  float bPixVal; //channel2 of each pixel
+  float rPixVal = 0.0; //channel0 of each pixel
+  float gPixVal = 0.0; //channel1 of each pixel
+  float bPixVal = 0.0; //channel2 of each pixel
   //some threads are not required for output value computation
   if((threadIdx.x<OUT_TILE_WIDTH) && (threadIdx.y<OUT_TILE_WIDTH))
   {
@@ -69,20 +69,19 @@ void convolution(float * dIn, const float * __restrict__ dM, float * dOut,
     {
       for(int k=0; k<Mask_width; k++)//iterate over each Column
       {
-        rPixVal += dM[j][k] * dInTile[j+threadIdx.y][(k*CHANNELS)+(threadIdx.x*CHANNELS)];
-        gPixVal += dM[j][k] * dInTile[j+threadIdx.y][(k*CHANNELS)+(threadIdx.x*CHANNELS + 1)];
-        bPixVal += dM[j][k] * dInTile[j+threadIdx.y][(k*CHANNELS)+(threadIdx.x*CHANNELS + 2)];
+        rPixVal += dM[j*Mask_width +k] * dInTile[j+threadIdx.y][(k*CHANNELS)+(threadIdx.x*CHANNELS)];
+        gPixVal += dM[j*Mask_width +k] * dInTile[j+threadIdx.y][(k*CHANNELS)+(threadIdx.x*CHANNELS + 1)];
+        bPixVal += dM[j*Mask_width +k] * dInTile[j+threadIdx.y][(k*CHANNELS)+(threadIdx.x*CHANNELS + 2)];
       }
     }
     //write values to global output
     if((outRowIdx < imageHeight) && (outColIdx < imageWidth))
     {
-      dIn[(outRowIdx*imageWidth + outColIdx)*CHANNELS] = clamp(rPixVal);
-      dIn[(outRowIdx*imageWidth + outColIdx)*CHANNELS + 1] = clamp(gPixVal);
-      dIn[(outRowIdx*imageWidth + outColIdx)*CHANNELS + 2] = clamp(bPixVal);
+      dOut[(outRowIdx*imageWidth + outColIdx)*CHANNELS] = clamp(rPixVal);
+      dOut[(outRowIdx*imageWidth + outColIdx)*CHANNELS + 1] = clamp(gPixVal);
+      dOut[(outRowIdx*imageWidth + outColIdx)*CHANNELS + 2] = clamp(bPixVal);
     }
   }
-
 }
 
 int main(int argc, char *argv[]) {
@@ -184,8 +183,8 @@ int main(int argc, char *argv[]) {
   wbTime_start(Compute, "Doing the computation on the GPU");
   //Thread block size same as Output Tile width
   dim3 dimBlock(INPUT_TILE_WIDTH, INPUT_TILE_WIDTH);
-  dim3 dimGrid(ceil(imageWidth/(float)dimBlock.x),
-               ceil(imageHeight/(float)dimBlock.y));
+  dim3 dimGrid(ceil((float)imageWidth/(float)OUT_TILE_WIDTH),
+               ceil((float)imageHeight/(float)OUT_TILE_WIDTH));
   convolution<<<dimGrid, dimBlock>>>(deviceInputImageData, deviceMaskData,
                                      deviceOutputImageData, imageChannels,
                                      imageWidth, imageHeight);
@@ -196,7 +195,9 @@ int main(int argc, char *argv[]) {
     cudaGetErrorString(cudaKernelErrVal), cudaKernelErrVal, __LINE__);
     exit(EXIT_FAILURE);
   }
+
   cudaDeviceSynchronize();
+
   wbTime_stop(Compute, "Doing the computation on the GPU");
 
   wbTime_start(Copy, "Copying data from the GPU");
@@ -217,8 +218,6 @@ int main(int argc, char *argv[]) {
   cudaFree(deviceOutputImageData);
 
   free(hostMaskData);
-  free(hostInputImageData);
-  free(hostOutputImageData);
   wbImage_delete(outputImage);
   wbImage_delete(inputImage);
 
