@@ -26,7 +26,8 @@ __global__
 void convolution(float * dIn, const float * __restrict__ dM, float * dOut,
             int imageChannels, int imageWidth, int imageHeight)
 {
-  //Input tile
+  //Input tile (No.Of.Columns=TILE_WIDTH*CHANNELS to copy every channel)
+  //No. of rows will be same as INPUT TILE WIDTH
   __shared__ float dInTile[INPUT_TILE_WIDTH][INPUT_TILE_WIDTH * CHANNELS];
 
   //1D Row and Column Indices for output tile
@@ -38,7 +39,7 @@ void convolution(float * dIn, const float * __restrict__ dM, float * dOut,
   int inColIdx = outColIdx - Mask_radius;
 
   //Copy data to shared memory tites
-  //Every thread copies one pixel from dIn
+  //Every thread copies one pixel from dIn (all 3 channels per pixel are copied)
   if((inRowIdx >= 0) && (inRowIdx < imageHeight) && (inColIdx >= 0) &&\
      (inColIdx < imageWidth))
   {
